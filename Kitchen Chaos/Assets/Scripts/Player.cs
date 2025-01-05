@@ -1,14 +1,20 @@
-using JetBrains.Annotations;
+
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
+using Unity.Netcode;
 
 
-public class Player : MonoBehaviour, IKitchenObjectParent
+public class Player : NetworkBehaviour, IKitchenObjectParent
 {
+    public static event EventHandler OnAnyPlayerSpawned;
+    public static event EventHandler OnAnyPlayerPickedSomething;
+    public  static void ResetStaticData()
+    {
+        OnAnyPlayerSpawned = null;
+        OnAnyPlayerPickedSomething = null;
+    }
     public event EventHandler OnPickedSomething;
-    public static Player Instance { get; private set; }
+    public static Player LocalInstance { get; private set; }
     public event EventHandler<OnSelectedCounterChangedEventArgs> OnSelectedCounterChanged;
 
     public class OnSelectedCounterChangedEventArgs
@@ -17,8 +23,6 @@ public class Player : MonoBehaviour, IKitchenObjectParent
     }
     [SerializeField]
     private float moveSpeed = 7f;
-    [SerializeField]
-    private GameInput gameInput;
     [SerializeField]
     private LayerMask counterLayerMask;
     [SerializeField]
@@ -32,18 +36,26 @@ public class Player : MonoBehaviour, IKitchenObjectParent
 
     private void Awake()
     {
-        if (Instance != null)
-        {
-            Debug.LogError("There is more than one player instance");
-        }
-        Instance = this;
+        //if (Instance != null)
+        //{
+        //    Debug.LogError("There is more than one player instance");
+        //}
+        //Instance = this;
     }
     private void Start()
     {
-        gameInput.OnInteractAction += GameInput_OnInteractAction;
-        gameInput.OnInteractAlternateAction += GameInput_OnInteractAlternateAction;
+        GameInput.Instance.OnInteractAction += GameInput_OnInteractAction;
+        GameInput.Instance.OnInteractAlternateAction += GameInput_OnInteractAlternateAction;
     }
 
+    public override void OnNetworkSpawn()
+    {
+        if (IsOwner)
+        {
+            LocalInstance = this;
+        }
+        OnAnyPlayerSpawned?.Invoke(this, EventArgs.Empty);
+    }
     private void GameInput_OnInteractAlternateAction(object sender, EventArgs e)
     {
         if (!GameManager.Instance.IsGamePlaying())
@@ -68,6 +80,8 @@ public class Player : MonoBehaviour, IKitchenObjectParent
     // Calls this method for every frame
     private void Update()
     {
+        if(!IsOwner)
+            return;
         HandleMovement();
         HandleInteractions();
     }
@@ -79,7 +93,7 @@ public class Player : MonoBehaviour, IKitchenObjectParent
 
     private void HandleMovement()
     {
-        Vector2 inputVector = gameInput.GetMovementVectorNormalized();
+        Vector2 inputVector = GameInput.Instance.GetMovementVectorNormalized();
         Vector3 movDir = new Vector3(inputVector.x, 0f, inputVector.y);
 
         float moveDistance = moveSpeed * Time.deltaTime;
@@ -126,7 +140,7 @@ public class Player : MonoBehaviour, IKitchenObjectParent
 
     private void HandleInteractions()
     {
-        Vector2 inputVector = gameInput.GetMovementVectorNormalized();
+        Vector2 inputVector = GameInput.Instance.GetMovementVectorNormalized();
         Vector3 movDir = new Vector3(inputVector.x, 0f, inputVector.y);
 
         if(movDir != Vector3.zero)
@@ -183,6 +197,7 @@ public class Player : MonoBehaviour, IKitchenObjectParent
         if (kitchenObject != null)
         {
             OnPickedSomething?.Invoke(this, EventArgs.Empty);
+            OnAnyPlayerPickedSomething?.Invoke(this, EventArgs.Empty);
         }
     }
 
@@ -199,5 +214,10 @@ public class Player : MonoBehaviour, IKitchenObjectParent
     public bool HasKitchenObject()
     {
         return (kitchenObject != null);
+    }
+
+    public NetworkObject GetNetworkObject()
+    {
+       return NetworkObject;
     }
 }
